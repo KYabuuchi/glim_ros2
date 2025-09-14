@@ -5,6 +5,7 @@
 #include <boost/format.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
+#include <velodyne_msgs/msg/velodyne_scan.hpp>
 #include <rosbag2_cpp/reader.hpp>
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_compression/sequential_compression_reader.hpp>
@@ -15,6 +16,7 @@
 #include <glim/util/extension_module_ros2.hpp>
 #include <glim_ros/glim_ros.hpp>
 #include <glim_ros/ros_compatibility.hpp>
+#include <glim_ros/nebula_adaptor.hpp>
 
 class SpeedCounter {
 public:
@@ -57,8 +59,9 @@ int main(int argc, char** argv) {
 
   const std::string imu_topic = config_ros.param<std::string>("glim_ros", "imu_topic", "/imu");
   const std::string points_topic = config_ros.param<std::string>("glim_ros", "points_topic", "/points");
+  const std::string packets_topic = config_ros.param<std::string>("glim_ros", "packets_topic", "/sensing/lidar/top/velodyne_packets");
   const std::string image_topic = config_ros.param<std::string>("glim_ros", "image_topic", "/image");
-  std::vector<std::string> topics = {imu_topic, points_topic, image_topic};
+  std::vector<std::string> topics = {imu_topic, points_topic, image_topic, packets_topic};
 
   rosbag2_storage::StorageFilter filter;
   spdlog::info("topics:");
@@ -95,6 +98,8 @@ int main(int argc, char** argv) {
   for (const auto& bag_filename : bag_filenames) {
     spdlog::info("- {}", bag_filename);
   }
+
+  nebula::VelodyneDecoder decoder(config_ros);
 
   // Playback range settings
   double delay = 0.0;
@@ -159,6 +164,7 @@ int main(int argc, char** argv) {
 
     rclcpp::Serialization<sensor_msgs::msg::Imu> imu_serialization;
     rclcpp::Serialization<sensor_msgs::msg::PointCloud2> points_serialization;
+    rclcpp::Serialization<velodyne_msgs::msg::VelodyneScan> packets_serialization;
 #ifdef BUILD_WITH_CV_BRIDGE
     rclcpp::Serialization<sensor_msgs::msg::Image> image_serialization;
     rclcpp::Serialization<sensor_msgs::msg::CompressedImage> compressed_image_serialization;
@@ -219,6 +225,31 @@ int main(int argc, char** argv) {
         auto imu_msg = std::make_shared<sensor_msgs::msg::Imu>();
         imu_serialization.deserialize_message(&serialized_msg, imu_msg.get());
         glim->imu_callback(imu_msg);
+      } else if (msg->topic_name == packets_topic) {
+        if (topic_type != "velodyne_msgs/msg/VelodyneScan") {
+          spdlog::error("topic_type mismatch: {} != velodyne_msgs/msg/VelodyneScan (topic={})", topic_type, msg->topic_name);
+          return false;
+        }
+        auto packets_msg = std::make_shared<velodyne_msgs::msg::VelodyneScan>();
+        packets_serialization.deserialize_message(&serialized_msg, packets_msg.get());
+
+        auto points_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+        decoder.convert_velodyne_packet_to_pointcloud2(*packets_msg, *points_msg);
+
+        const size_t workload = glim->points_callback(points_msg);
+
+        if (packets_msg->header.stamp.sec + packets_msg->header.stamp.nanosec * 1e-9 > end_time) {
+          spdlog::info("end_time reached");
+          return false;
+        }
+
+        if (workload > 5) {
+          // Odometry estimation is behind
+          const size_t sleep_msec = (workload - 4) * 5;
+          spdlog::debug("throttling: {} msec (workload={})", sleep_msec, workload);
+          std::this_thread::sleep_for(std::chrono::milliseconds(sleep_msec));
+        }
+
       } else if (msg->topic_name == points_topic) {
         if (topic_type != "sensor_msgs/msg/PointCloud2") {
           spdlog::error("topic_type mismatch: {} != sensor_msgs/msg/PointCloud2 (topic={})", topic_type, msg->topic_name);
