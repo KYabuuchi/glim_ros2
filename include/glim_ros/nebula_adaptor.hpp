@@ -2,7 +2,6 @@
 #include <velodyne_msgs/msg/velodyne_packet.hpp>
 #include <velodyne_msgs/msg/velodyne_scan.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <memory>
 #include <nebula_decoders/nebula_decoders_velodyne/velodyne_driver.hpp>
 #include <glim/util/config.hpp>
 

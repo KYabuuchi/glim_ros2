@@ -1,8 +1,6 @@
 #include "glim_ros/nebula_adaptor.hpp"
 #include <nebula_common/velodyne/velodyne_common.hpp>
 #include <nebula_decoders/nebula_decoders_velodyne/velodyne_driver.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
-#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <spdlog/spdlog.h>
 
 namespace nebula {
