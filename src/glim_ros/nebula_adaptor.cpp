@@ -135,7 +135,9 @@ void VelodyneDecoder::convert_velodyne_packet_to_pointcloud2(const velodyne_msgs
       continue;
     }
     pcl::toROSMsg(*pointcloud, points_msg);
-    break;
+    // TODO(KYabuuchi): more precise timestamp handling
+    points_msg.header.frame_id = packet_msg.header.frame_id;
+    points_msg.header.stamp = packet_msg.header.stamp;
   }
 }
 }  // namespace nebula
