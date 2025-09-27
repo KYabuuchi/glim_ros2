@@ -108,4 +108,7 @@ if(BUILD_WITH_VIEWER)
   )
 endif()
 
-ament_auto_package()
+ament_auto_package(
+  INSTALL_TO_SHARE
+  config
+)
