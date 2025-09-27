@@ -3,7 +3,6 @@ project(glim_ros VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
-
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Choose the type of build." FORCE)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
@@ -21,7 +20,6 @@ find_package(Boost REQUIRED COMPONENTS program_options)
 
 find_package(nebula_common REQUIRED)
 find_package(nebula_decoders REQUIRED)
-find_package(patchworkpp REQUIRED)
 
 if(DEFINED GLIM_USE_OPENCV AND NOT GLIM_USE_OPENCV AND BUILD_WITH_CV_BRIDGE)
   message(WARNING "BUILD_WITH_CV_BRIDGE is disabled because glim is not built with OpenCV.")
@@ -37,33 +35,25 @@ if(BUILD_WITH_CUDA)
 endif()
 
 set(OLD_DISTRO "humble;galactic;foxy")
-
 if($ENV{ROS_DISTRO} IN_LIST OLD_DISTRO)
   add_definitions(-DCV_BRIDGE_INCLUDE_H)
 else()
   add_definitions(-DCV_BRIDGE_INCLUDE_HPP)
 endif()
 
-# ## glim_ros ###
+### glim_ros ###
 ament_auto_add_library(glim_ros SHARED
   src/glim_ros/glim_ros.cpp
   src/glim_ros/ros_qos.cpp
   src/glim_ros/nebula_adaptor.cpp
-  src/glim_ros/patchwork_plusplus.cpp
 )
 target_include_directories(glim_ros PUBLIC
   include
   ${nebula_common_INCLUDE_DIRS}
   ${nebula_decoders_INCLUDE_DIRS}
-
-  # patchworkpp_INCLUDE_DIR is not defined, so we use patchworkpp_DIR to get to the include folder
-  ${patchworkpp_DIR}/../../../include
 )
 target_link_libraries(glim_ros
   glim::glim
-
-  # patchworkpp_LIBRARY is not defined, so we use patchworkpp_DIR to get to the link libraries folder
-  ${patchworkpp_DIR}/../../../lib/libgseg_component.so
 )
 rclcpp_components_register_nodes(glim_ros "glim::GlimROS")
 
@@ -71,7 +61,7 @@ ament_auto_add_library(rviz_viewer SHARED
   src/glim_ros/rviz_viewer.cpp
 )
 
-# ## glim_rosnode ###
+### glim_rosnode ###
 ament_auto_add_executable(glim_rosnode
   src/glim_rosnode.cpp
 )
@@ -79,7 +69,7 @@ target_link_libraries(glim_rosnode
   glim_ros
 )
 
-# ## glim_rosbag ###
+### glim_rosbag ###
 ament_auto_add_executable(glim_rosbag
   src/glim_rosbag.cpp
 )
@@ -87,7 +77,7 @@ target_link_libraries(glim_rosbag
   glim_ros
 )
 
-# ## validator_node ###
+### validator_node ###
 ament_auto_add_executable(validator_node
   src/validator_node.cpp
 )
@@ -96,7 +86,7 @@ target_link_libraries(validator_node
 )
 
 if(BUILD_WITH_VIEWER)
-  # ## offline_viewer ###
+  ### offline_viewer ###
   ament_auto_add_executable(offline_viewer
     src/offline_viewer.cpp
   )
@@ -108,7 +98,7 @@ if(BUILD_WITH_VIEWER)
     Boost::program_options
   )
 
-  # ## map_editor ###
+  ### map_editor ###
   ament_auto_add_executable(map_editor
     src/map_editor.cpp
   )
