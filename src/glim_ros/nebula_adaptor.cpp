@@ -4,11 +4,17 @@
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <spdlog/spdlog.h>
+#include <nebula_decoders/nebula_decoders_velodyne/velodyne_driver.hpp>
+#include <velodyne_msgs/msg/velodyne_packet.hpp>
+#include <velodyne_msgs/msg/velodyne_scan.hpp>
+#include <rclcpp/serialization.hpp>
 
 namespace nebula {
 namespace {
-std::shared_ptr<drivers::VelodyneDriver> driver_ptr_;
-}
+
+std::shared_ptr<drivers::VelodyneDriver> driver_ptr_ = nullptr;
+rclcpp::Serialization<velodyne_msgs::msg::VelodyneScan> packets_serialization;
+}  // namespace
 
 Status initialize_driver(
   std::shared_ptr<const drivers::VelodyneSensorConfiguration> sensor_configuration,
@@ -19,59 +25,50 @@ Status initialize_driver(
 }
 
 nebula::Status
-get_parameters(const glim::Config& config_ros, drivers::VelodyneSensorConfiguration& sensor_configuration, drivers::VelodyneCalibrationConfiguration& calibration_configuration) {
+get_parameters(rclcpp::Node* node, drivers::VelodyneSensorConfiguration& sensor_configuration, drivers::VelodyneCalibrationConfiguration& calibration_configuration) {
   {
-    auto sensor_model = config_ros.param<std::string>("glim_ros", "sensor_model");
-    if (!sensor_model) {
-      spdlog::error("sensor_model parameter is required");
-    }
-    sensor_configuration.sensor_model = nebula::drivers::sensor_model_from_string(sensor_model.value());
+    auto sensor_model = node->declare_parameter<std::string>("glim_ros.sensor_model");
+    sensor_configuration.sensor_model = nebula::drivers::sensor_model_from_string(sensor_model);
   }
   {
-    auto return_mode = config_ros.param<std::string>("glim_ros", "return_mode");
-    if (!return_mode) {
-      spdlog::error("return_mode parameter is required");
-    }
-    sensor_configuration.return_mode = nebula::drivers::return_mode_from_string(return_mode.value());
+    auto return_mode = node->declare_parameter<std::string>("glim_ros.return_mode");
+    sensor_configuration.return_mode = nebula::drivers::return_mode_from_string(return_mode);
   }
   {
-    auto frame_id = config_ros.param<std::string>("glim_ros", "frame_id");
-    if (!frame_id) {
-      spdlog::error("frame_id parameter is required");
-    }
-    sensor_configuration.frame_id = frame_id.value();
+    auto frame_id = node->declare_parameter<std::string>("glim_ros.frame_id");
+    sensor_configuration.frame_id = frame_id;
   }
   {
-    auto scan_phase = config_ros.param<double>("glim_ros", "scan_phase");
-    sensor_configuration.scan_phase = scan_phase.value();
+    auto scan_phase = node->declare_parameter<double>("glim_ros.scan_phase");
+    sensor_configuration.scan_phase = scan_phase;
   }
   {
-    auto calibration_file = config_ros.param<std::string>("glim_ros", "calibration_file");
-    calibration_configuration.calibration_file = calibration_file.value();
+    auto calibration_file = node->declare_parameter<std::string>("glim_ros.calibration_file");
+    calibration_configuration.calibration_file = calibration_file;
   }
   {
-    auto min_range = config_ros.param<double>("glim_ros", "min_range");
-    sensor_configuration.min_range = min_range.value();
+    auto min_range = node->declare_parameter<double>("glim_ros.min_range");
+    sensor_configuration.min_range = min_range;
   }
   {
-    auto max_range = config_ros.param<double>("glim_ros", "max_range");
-    sensor_configuration.max_range = max_range.value();
+    auto max_range = node->declare_parameter<double>("glim_ros.max_range");
+    sensor_configuration.max_range = max_range;
   }
   double view_direction = sensor_configuration.scan_phase * M_PI / 180;
   double view_width = 360 * M_PI / 180;
   {
-    auto view_direction_param = config_ros.param<double>("glim_ros", "view_direction");
-    view_width = view_direction_param.value() * M_PI / 180;
+    auto view_direction_param = node->declare_parameter<double>("glim_ros.view_direction");
+    view_width = view_direction_param * M_PI / 180;
   }
 
   if (sensor_configuration.sensor_model != nebula::drivers::SensorModel::VELODYNE_HDL64) {
     {
-      auto cloud_min_angle = config_ros.param<int>("glim_ros", "cloud_min_angle");
-      sensor_configuration.cloud_min_angle = cloud_min_angle.value();
+      auto cloud_min_angle = node->declare_parameter<int>("glim_ros.cloud_min_angle");
+      sensor_configuration.cloud_min_angle = cloud_min_angle;
     }
     {
-      auto cloud_max_angle = config_ros.param<int>("glim_ros", "cloud_max_angle");
-      sensor_configuration.cloud_max_angle = cloud_max_angle.value();
+      auto cloud_max_angle = node->declare_parameter<int>("glim_ros.cloud_max_angle");
+      sensor_configuration.cloud_max_angle = cloud_max_angle;
     }
   } else {
     double min_angle = fmod(fmod(view_direction + view_width / 2, 2 * M_PI) + 2 * M_PI, 2 * M_PI);
@@ -107,26 +104,26 @@ get_parameters(const glim::Config& config_ros, drivers::VelodyneSensorConfigurat
   return Status::OK;
 }
 
-VelodyneDecoder::VelodyneDecoder(const glim::Config& config_ros) {
-  drivers::VelodyneCalibrationConfiguration calibration_configuration;
-  drivers::VelodyneSensorConfiguration sensor_configuration;
+// VelodyneDecoder::VelodyneDecoder(const glim::Config& config_ros) {
+//   drivers::VelodyneCalibrationConfiguration calibration_configuration;
+//   drivers::VelodyneSensorConfiguration sensor_configuration;
 
-  Status wrapper_status_ = get_parameters(config_ros, sensor_configuration, calibration_configuration);
-  if (nebula::Status::OK != wrapper_status_) {
-    throw std::runtime_error("Failed to get Velodyne parameters");
-  }
+//   Status wrapper_status_ = get_parameters(config_ros, sensor_configuration, calibration_configuration);
+//   if (nebula::Status::OK != wrapper_status_) {
+//     throw std::runtime_error("Failed to get Velodyne parameters");
+//   }
 
-  auto calibration_cfg_ptr_ = std::make_shared<const drivers::VelodyneCalibrationConfiguration>(calibration_configuration);
-  auto sensor_cfg_ptr_ = std::make_shared<const drivers::VelodyneSensorConfiguration>(sensor_configuration);
+//   auto calibration_cfg_ptr_ = std::make_shared<const drivers::VelodyneCalibrationConfiguration>(calibration_configuration);
+//   auto sensor_cfg_ptr_ = std::make_shared<const drivers::VelodyneSensorConfiguration>(sensor_configuration);
 
-  wrapper_status_ = initialize_driver(sensor_cfg_ptr_, calibration_cfg_ptr_);
+//   wrapper_status_ = initialize_driver(sensor_cfg_ptr_, calibration_cfg_ptr_);
 
-  if (nebula::Status::OK != wrapper_status_) {
-    throw std::runtime_error("Failed to initialize Velodyne driver");
-  }
-}
+//   if (nebula::Status::OK != wrapper_status_) {
+//     throw std::runtime_error("Failed to initialize Velodyne driver");
+//   }
+// }
 
-void VelodyneDecoder::convert_velodyne_packet_to_pointcloud2(const velodyne_msgs::msg::VelodyneScan& packet_msg, sensor_msgs::msg::PointCloud2& points_msg) {
+void convert_velodyne_packet_to_pointcloud2(const velodyne_msgs::msg::VelodyneScan& packet_msg, sensor_msgs::msg::PointCloud2& points_msg) {
   for (auto& pkt : packet_msg.packets) {
     auto pointcloud_ts = driver_ptr_->parse_cloud_packet(std::vector<uint8_t>(pkt.data.begin(), std::next(pkt.data.begin(), pkt.data.size())), pkt.stamp.sec);
     auto pointcloud = std::get<0>(pointcloud_ts);
@@ -140,4 +137,48 @@ void VelodyneDecoder::convert_velodyne_packet_to_pointcloud2(const velodyne_msgs
     points_msg.header.stamp = packet_msg.header.stamp;
   }
 }
+
+Decoder::Decoder(rclcpp::Node* node) {
+  // TODO:
+  const std::string sensor_model = "VLS128";
+
+  if (sensor_model == "VLP16" || sensor_model == "VLS128") {
+    // Velodyne Decoder
+    drivers::VelodyneCalibrationConfiguration calibration_configuration;
+    drivers::VelodyneSensorConfiguration sensor_configuration;
+
+    sensor_configuration = drivers::VelodyneSensorConfiguration();
+    Status wrapper_status_ = get_parameters(node, sensor_configuration, calibration_configuration);
+    if (nebula::Status::OK != wrapper_status_) {
+      throw std::runtime_error("Failed to get Velodyne parameters");
+    }
+
+    auto calibration_cfg_ptr_ = std::make_shared<const drivers::VelodyneCalibrationConfiguration>(calibration_configuration);
+    auto sensor_cfg_ptr_ = std::make_shared<const drivers::VelodyneSensorConfiguration>(sensor_configuration);
+
+    wrapper_status_ = initialize_driver(sensor_cfg_ptr_, calibration_cfg_ptr_);
+    if (nebula::Status::OK != wrapper_status_) {
+      throw std::runtime_error("Failed to initialize Velodyne driver");
+    }
+
+  } else {
+    throw std::runtime_error("Unsupported sensor model : " + sensor_model);
+  }
+}
+
+bool Decoder::convert_packets_to_pointcloud2(const std::string& topic_type, const rclcpp::SerializedMessage& serialized_msg, sensor_msgs::msg::PointCloud2& points_msg) {
+  if (topic_type != "velodyne_msgs/msg/VelodyneScan") {
+    spdlog::error("topic_type mismatch: {} != velodyne_msgs/msg/VelodyneScan", topic_type);
+    return false;
+  }
+
+  // Deserialize the VelodyneScan message
+  auto packet_msg = std::make_shared<velodyne_msgs::msg::VelodyneScan>();
+  packets_serialization.deserialize_message(&serialized_msg, packet_msg.get());
+
+  // Convert the VelodyneScan message to PointCloud2
+  convert_velodyne_packet_to_pointcloud2(*packet_msg, points_msg);
+  return true;
+}
+
 }  // namespace nebula

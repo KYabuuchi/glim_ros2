@@ -85,8 +85,14 @@ int main(int argc, char** argv) {
     std::vector<std::string> filenames;
     glob_t globbuf;
     int ret = glob(argv[i], 0, nullptr, &globbuf);
+    // TODO: bug?
     for (int i = 0; i < globbuf.gl_pathc; i++) {
-      filenames.push_back(globbuf.gl_pathv[i]);
+      const std::string path = globbuf.gl_pathv[i];
+      // Skip YAML files
+      if (path.size() >= 5 && path.substr(path.size() - 5) == ".yaml") {
+        continue;
+      }
+      filenames.push_back(path);
     }
     globfree(&globbuf);
 
@@ -99,7 +105,8 @@ int main(int argc, char** argv) {
     spdlog::info("- {}", bag_filename);
   }
 
-  nebula::VelodyneDecoder decoder(config_ros);
+  // Initialize Nebula decoder
+  std::unique_ptr<nebula::Decoder> decoder = std::make_unique<nebula::Decoder>(glim.get());
 
   // Playback range settings
   double delay = 0.0;
@@ -164,7 +171,6 @@ int main(int argc, char** argv) {
 
     rclcpp::Serialization<sensor_msgs::msg::Imu> imu_serialization;
     rclcpp::Serialization<sensor_msgs::msg::PointCloud2> points_serialization;
-    rclcpp::Serialization<velodyne_msgs::msg::VelodyneScan> packets_serialization;
 #ifdef BUILD_WITH_CV_BRIDGE
     rclcpp::Serialization<sensor_msgs::msg::Image> image_serialization;
     rclcpp::Serialization<sensor_msgs::msg::CompressedImage> compressed_image_serialization;
@@ -226,19 +232,15 @@ int main(int argc, char** argv) {
         imu_serialization.deserialize_message(&serialized_msg, imu_msg.get());
         glim->imu_callback(imu_msg);
       } else if (msg->topic_name == packets_topic) {
-        if (topic_type != "velodyne_msgs/msg/VelodyneScan") {
-          spdlog::error("topic_type mismatch: {} != velodyne_msgs/msg/VelodyneScan (topic={})", topic_type, msg->topic_name);
+        auto points_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+        bool success = decoder->convert_packets_to_pointcloud2(topic_type, serialized_msg, *points_msg);
+        if (!success) {
+          spdlog::error("failed to convert velodyne packets to pointcloud2 (topic={})", msg->topic_name);
           return false;
         }
-        auto packets_msg = std::make_shared<velodyne_msgs::msg::VelodyneScan>();
-        packets_serialization.deserialize_message(&serialized_msg, packets_msg.get());
-
-        auto points_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
-        decoder.convert_velodyne_packet_to_pointcloud2(*packets_msg, *points_msg);
-
         const size_t workload = glim->points_callback(points_msg);
 
-        if (packets_msg->header.stamp.sec + packets_msg->header.stamp.nanosec * 1e-9 > end_time) {
+        if (points_msg->header.stamp.sec + points_msg->header.stamp.nanosec * 1e-9 > end_time) {
           spdlog::info("end_time reached");
           return false;
         }
