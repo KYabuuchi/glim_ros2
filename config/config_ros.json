@@ -72,7 +72,7 @@
     // Topics
     // "imu_topic": "/sensing/imu/imu_data",
     "imu_topic": "/sensing/imu/tamagawa/imu_raw",
-    "packets_topic": "/sensing/lidar/top/velodyne_packets",
+    "packets_topic": "/sensing/lidar/top/pandar_packets",
     "points_topic": "/sensing/lidar/top/pointcloud_raw",
     "image_topic": "/image",
     // QoS options

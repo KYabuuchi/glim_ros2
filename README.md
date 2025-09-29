@@ -18,6 +18,8 @@ unzip -d ~/autoware_map/ ~/autoware_map/sample-rosbag.zip
 Run command
 
 ```bash
-ros2 run glim_ros glim_rosbag ~/autoware_map/sample-rosbag/ \
-  --ros-args -p config_path:=$(ros2 pkg prefix glim_ros)/share/glim_ros/config
+ ros2 run glim_ros glim_rosbag ~/autoware_map/sample-rosbag/ \
+  --ros-args -p config_path:=$(ros2 pkg prefix glim_ros)/share/glim_ros/config \
+  --params-file install/glim_ros/share/glim_ros/config/config_nebula.yaml \
+  -p glim_ros.calibration_file:=$(ros2 pkg prefix nebula_decoders)/share/nebula_decoders/calibration/velodyne/VLS128.yaml 
 ```

@@ -20,6 +20,8 @@ find_package(Boost REQUIRED COMPONENTS program_options)
 
 find_package(nebula_common REQUIRED)
 find_package(nebula_decoders REQUIRED)
+find_package(nebula_ros REQUIRED)
+find_package(pandar_msgs REQUIRED)
 
 if(DEFINED GLIM_USE_OPENCV AND NOT GLIM_USE_OPENCV AND BUILD_WITH_CV_BRIDGE)
   message(WARNING "BUILD_WITH_CV_BRIDGE is disabled because glim is not built with OpenCV.")
@@ -49,8 +51,10 @@ ament_auto_add_library(glim_ros SHARED
 )
 target_include_directories(glim_ros PUBLIC
   include
+  ${pandar_msgs_INCLUDE_DIRS}
   ${nebula_common_INCLUDE_DIRS}
   ${nebula_decoders_INCLUDE_DIRS}
+  ${nebula_ros_INCLUDE_DIRS}
 )
 target_link_libraries(glim_ros
   glim::glim

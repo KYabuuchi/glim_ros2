@@ -235,7 +235,7 @@ int main(int argc, char** argv) {
         auto points_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
         bool success = decoder->convert_packets_to_pointcloud2(topic_type, serialized_msg, *points_msg);
         if (!success) {
-          spdlog::error("failed to convert velodyne packets to pointcloud2 (topic={})", msg->topic_name);
+          spdlog::error("failed to convert lidar packets to pointcloud2 (topic={})", msg->topic_name);
           return false;
         }
         const size_t workload = glim->points_callback(points_msg);
