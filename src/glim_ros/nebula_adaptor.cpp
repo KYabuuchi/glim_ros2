@@ -17,7 +17,8 @@ namespace {
 
 std::shared_ptr<drivers::VelodyneDriver> velodyne_driver_ptr_ = nullptr;
 std::shared_ptr<drivers::HesaiDriver> hesai_driver_ptr_ = nullptr;
-rclcpp::Serialization<velodyne_msgs::msg::VelodyneScan> packets_serialization;
+rclcpp::Serialization<velodyne_msgs::msg::VelodyneScan> velodyne_packets_serialization;
+rclcpp::Serialization<pandar_msgs::msg::PandarScan> pandar_packets_serialization;
 }  // namespace
 
 Status initialize_velodyne_driver(
@@ -43,6 +44,11 @@ Status get_parameters(
   sensor_configuration.sync_angle = node->declare_parameter<uint16_t>("sync_angle");
   sensor_configuration.cut_angle = node->declare_parameter<double>("cut_angle");
 
+  sensor_configuration.cloud_max_angle = node->declare_parameter<int>("cloud_max_angle");
+  sensor_configuration.cloud_min_angle = node->declare_parameter<int>("cloud_min_angle");
+  sensor_configuration.max_range = node->declare_parameter<double>("max_range");
+  sensor_configuration.min_range = node->declare_parameter<double>("min_range");
+
   calibration_configuration.calibration_file = node->declare_parameter<std::string>("calibration_file");
   // TODO: support PandarAT128
   // if (sensor_configuration.sensor_model == drivers::SensorModel::HESAI_PANDARAT128) {
@@ -65,6 +71,8 @@ Status get_parameters(
     if (cal_status != Status::OK) {
       RCLCPP_ERROR_STREAM(node->get_logger(), "Given Calibration File: '" << calibration_configuration.calibration_file << "'");
       return cal_status;
+    } else {
+      RCLCPP_INFO_STREAM(node->get_logger(), "Given Calibration File: '" << calibration_configuration.calibration_file << "'");
     }
   }
   // TODO: support PandarAT128
@@ -160,8 +168,7 @@ get_parameters(rclcpp::Node* node, drivers::VelodyneSensorConfiguration& sensor_
 }
 
 bool convert_pandar_packet_to_pointcloud2(const pandar_msgs::msg::PandarScan& packet_msg, sensor_msgs::msg::PointCloud2& points_msg) {
-  for (auto& pkt : packet_msg.packets) {
-    spdlog::info("pkt size: {}", pkt.size);
+  for (const auto& pkt : packet_msg.packets) {
     auto pointcloud_ts = hesai_driver_ptr_->parse_cloud_packet(std::vector<uint8_t>(pkt.data.begin(), std::next(pkt.data.begin(), pkt.size)));
     auto pointcloud = std::get<0>(pointcloud_ts);
 
@@ -169,11 +176,14 @@ bool convert_pandar_packet_to_pointcloud2(const pandar_msgs::msg::PandarScan& pa
       continue;
     }
     pcl::toROSMsg(*pointcloud, points_msg);
+
     // TODO(KYabuuchi): more precise timestamp handling
     points_msg.header.frame_id = packet_msg.header.frame_id;
     points_msg.header.stamp = packet_msg.header.stamp;
+
     return true;
   }
+  RCLCPP_WARN(rclcpp::get_logger("nebula"), "Pandar packet conversion resulted in no points");
   return false;
 }
 
@@ -223,9 +233,7 @@ Decoder::Decoder(rclcpp::Node* node) {
     drivers::HesaiCalibrationConfiguration calibration_configuration;
     drivers::HesaiSensorConfiguration sensor_configuration;
     drivers::HesaiCorrection correction_configuration;
-
-    sensor_configuration.cloud_max_angle = 36000;
-    sensor_configuration.cloud_min_angle = 0;
+    sensor_configuration.hires_mode = true;
     sensor_configuration.sensor_model = nebula::drivers::sensor_model_from_string(sensor_model);
     Status wrapper_status_ = get_parameters(node, sensor_configuration, calibration_configuration, correction_configuration);
     if (Status::OK != wrapper_status_) {
@@ -250,21 +258,21 @@ Decoder::Decoder(rclcpp::Node* node) {
 bool Decoder::convert_packets_to_pointcloud2(const std::string& topic_type, const rclcpp::SerializedMessage& serialized_msg, sensor_msgs::msg::PointCloud2& points_msg) {
   if (topic_type == "velodyne_msgs/msg/VelodyneScan") {
     // Deserialize the VelodyneScan message
-    auto packet_msg = std::make_shared<velodyne_msgs::msg::VelodyneScan>();
-    packets_serialization.deserialize_message(&serialized_msg, packet_msg.get());
+    velodyne_msgs::msg::VelodyneScan packet_msg;
+    velodyne_packets_serialization.deserialize_message(&serialized_msg, &packet_msg);
 
     // Convert the VelodyneScan message to PointCloud2
-    convert_velodyne_packet_to_pointcloud2(*packet_msg, points_msg);
+    convert_velodyne_packet_to_pointcloud2(packet_msg, points_msg);
     return true;
   }
 
   if (topic_type == "pandar_msgs/msg/PandarScan") {
     // Deserialize the PandarScan message
-    auto packet_msg = std::make_shared<pandar_msgs::msg::PandarScan>();
-    packets_serialization.deserialize_message(&serialized_msg, packet_msg.get());
+    pandar_msgs::msg::PandarScan packet_msg;
+    pandar_packets_serialization.deserialize_message(&serialized_msg, &packet_msg);
 
-    // Convert the VelodyneScan message to PointCloud2
-    const bool success = convert_pandar_packet_to_pointcloud2(*packet_msg, points_msg);
+    // Convert the PandarScan message to PointCloud2
+    const bool success = convert_pandar_packet_to_pointcloud2(packet_msg, points_msg);
     return success;
   }
 

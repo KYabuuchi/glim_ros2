@@ -236,20 +236,21 @@ int main(int argc, char** argv) {
         bool success = decoder->convert_packets_to_pointcloud2(topic_type, serialized_msg, *points_msg);
         if (!success) {
           spdlog::error("failed to convert lidar packets to pointcloud2 (topic={})", msg->topic_name);
-          return false;
         }
-        const size_t workload = glim->points_callback(points_msg);
+        if (success) {
+          const size_t workload = glim->points_callback(points_msg);
 
-        if (points_msg->header.stamp.sec + points_msg->header.stamp.nanosec * 1e-9 > end_time) {
-          spdlog::info("end_time reached");
-          return false;
-        }
+          if (points_msg->header.stamp.sec + points_msg->header.stamp.nanosec * 1e-9 > end_time) {
+            spdlog::info("end_time reached");
+            return false;
+          }
 
-        if (workload > 5) {
-          // Odometry estimation is behind
-          const size_t sleep_msec = (workload - 4) * 5;
-          spdlog::debug("throttling: {} msec (workload={})", sleep_msec, workload);
-          std::this_thread::sleep_for(std::chrono::milliseconds(sleep_msec));
+          if (workload > 5) {
+            // Odometry estimation is behind
+            const size_t sleep_msec = (workload - 4) * 5;
+            spdlog::debug("throttling: {} msec (workload={})", sleep_msec, workload);
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_msec));
+          }
         }
 
       } else if (msg->topic_name == points_topic) {
