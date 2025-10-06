@@ -1,0 +1,28 @@
+/**:
+  ros__parameters:
+    glim_ros:
+      frame_id: velodyne
+      diag_span: 1000
+      # calibration_file: Need to specify via command line parameter
+      # e.g. -p glim_ros.calibration_file:=$(ros2 pkg prefix nebula_decoders)/share/nebula_decoders/calibration/velodyne/VLS128.yaml
+      calibration_file: $(find-pkg-share nebula_decoders)/calibration/velodyne/VLS128.yaml
+      min_range: 0.3
+      max_range: 300.0
+      cloud_min_angle: 0
+      cloud_max_angle: 360
+      scan_phase: 0.0
+      # sensor_model: VLS128
+      sensor_model: Pandar128E4X
+      rotation_speed: 600
+      return_mode: Dual
+      view_direction: 1.0
+
+    return_mode: Dual
+    frame_id: pandar
+    calibration_file: $(find-pkg-share nebula_decoders)/calibration/pandar/Pandar128E4X.yaml
+    min_range: 0.3
+    max_range: 300.0
+    sync_angle: 160
+    cut_angle: 160.0
+    cloud_min_angle: 0
+    cloud_max_angle: 360

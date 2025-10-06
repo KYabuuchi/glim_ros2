@@ -5,6 +5,7 @@
 #include <boost/format.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/compressed_image.hpp>
+#include <velodyne_msgs/msg/velodyne_scan.hpp>
 #include <rosbag2_cpp/reader.hpp>
 #include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_compression/sequential_compression_reader.hpp>
@@ -15,6 +16,7 @@
 #include <glim/util/extension_module_ros2.hpp>
 #include <glim_ros/glim_ros.hpp>
 #include <glim_ros/ros_compatibility.hpp>
+#include <glim_ros/nebula_adaptor.hpp>
 
 class SpeedCounter {
 public:
@@ -57,8 +59,9 @@ int main(int argc, char** argv) {
 
   const std::string imu_topic = config_ros.param<std::string>("glim_ros", "imu_topic", "/imu");
   const std::string points_topic = config_ros.param<std::string>("glim_ros", "points_topic", "/points");
+  const std::string packets_topic = config_ros.param<std::string>("glim_ros", "packets_topic", "/sensing/lidar/top/velodyne_packets");
   const std::string image_topic = config_ros.param<std::string>("glim_ros", "image_topic", "/image");
-  std::vector<std::string> topics = {imu_topic, points_topic, image_topic};
+  std::vector<std::string> topics = {imu_topic, points_topic, image_topic, packets_topic};
 
   rosbag2_storage::StorageFilter filter;
   spdlog::info("topics:");
@@ -82,8 +85,14 @@ int main(int argc, char** argv) {
     std::vector<std::string> filenames;
     glob_t globbuf;
     int ret = glob(argv[i], 0, nullptr, &globbuf);
+    // TODO: bug?
     for (int i = 0; i < globbuf.gl_pathc; i++) {
-      filenames.push_back(globbuf.gl_pathv[i]);
+      const std::string path = globbuf.gl_pathv[i];
+      // Skip YAML files
+      if (path.size() >= 5 && path.substr(path.size() - 5) == ".yaml") {
+        continue;
+      }
+      filenames.push_back(path);
     }
     globfree(&globbuf);
 
@@ -95,6 +104,9 @@ int main(int argc, char** argv) {
   for (const auto& bag_filename : bag_filenames) {
     spdlog::info("- {}", bag_filename);
   }
+
+  // Initialize Nebula decoder
+  std::unique_ptr<nebula::Decoder> decoder = std::make_unique<nebula::Decoder>(glim.get());
 
   // Playback range settings
   double delay = 0.0;
@@ -219,6 +231,28 @@ int main(int argc, char** argv) {
         auto imu_msg = std::make_shared<sensor_msgs::msg::Imu>();
         imu_serialization.deserialize_message(&serialized_msg, imu_msg.get());
         glim->imu_callback(imu_msg);
+      } else if (msg->topic_name == packets_topic) {
+        auto points_msg = std::make_shared<sensor_msgs::msg::PointCloud2>();
+        bool success = decoder->convert_packets_to_pointcloud2(topic_type, serialized_msg, *points_msg);
+        if (!success) {
+          spdlog::error("failed to convert lidar packets to pointcloud2 (topic={})", msg->topic_name);
+        }
+        if (success) {
+          const size_t workload = glim->points_callback(points_msg);
+
+          if (points_msg->header.stamp.sec + points_msg->header.stamp.nanosec * 1e-9 > end_time) {
+            spdlog::info("end_time reached");
+            return false;
+          }
+
+          if (workload > 5) {
+            // Odometry estimation is behind
+            const size_t sleep_msec = (workload - 4) * 5;
+            spdlog::debug("throttling: {} msec (workload={})", sleep_msec, workload);
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_msec));
+          }
+        }
+
       } else if (msg->topic_name == points_topic) {
         if (topic_type != "sensor_msgs/msg/PointCloud2") {
           spdlog::error("topic_type mismatch: {} != sensor_msgs/msg/PointCloud2 (topic={})", topic_type, msg->topic_name);
